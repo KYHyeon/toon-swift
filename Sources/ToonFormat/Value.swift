@@ -1,7 +1,7 @@
 import Foundation
 
 /// An intermediate representation for TOON values during encoding and decoding.
-enum Value: Equatable {
+public enum Value: Equatable, Sendable {
     case null
     case bool(Bool)
     case int(Int64)
@@ -105,94 +105,104 @@ enum Value: Equatable {
         return array.allSatisfy { $0.isObject }
     }
 
-    // MARK: - Factory
+}
 
-    /// Creates a `Value` from an arbitrary value.
-    static func from(_ value: Any) -> Value {
-        if value is NSNull {
-            return .null
-        }
+// MARK: - Codable
 
-        if let boolValue = value as? Bool {
-            return .bool(boolValue)
-        }
-
-        if let intValue = value as? Int {
-            return .int(Int64(intValue))
-        }
-        if let int8Value = value as? Int8 {
-            return .int(Int64(int8Value))
-        }
-        if let int16Value = value as? Int16 {
-            return .int(Int64(int16Value))
-        }
-        if let int32Value = value as? Int32 {
-            return .int(Int64(int32Value))
-        }
-        if let int64Value = value as? Int64 {
-            return .int(int64Value)
-        }
-
-        if let uintValue = value as? UInt {
-            return .int(Int64(uintValue))
-        }
-        if let uint8Value = value as? UInt8 {
-            return .int(Int64(uint8Value))
-        }
-        if let uint16Value = value as? UInt16 {
-            return .int(Int64(uint16Value))
-        }
-        if let uint32Value = value as? UInt32 {
-            return .int(Int64(uint32Value))
-        }
-        if let uint64Value = value as? UInt64 {
-            if uint64Value <= Int64.max {
-                return .int(Int64(uint64Value))
-            } else {
-                return .string(String(uint64Value))
-            }
-        }
-
-        if let floatValue = value as? Float {
-            return floatValue.isFinite ? .double(Double(floatValue)) : .null
-        }
-        if let doubleValue = value as? Double {
-            return doubleValue.isFinite ? .double(doubleValue) : .null
-        }
-
-        if let stringValue = value as? String {
-            return .string(stringValue)
-        }
-
-        if let dateValue = value as? Date {
-            return .date(dateValue)
-        }
-
-        if let urlValue = value as? URL {
-            return .url(urlValue)
-        }
-
-        if let dataValue = value as? Data {
-            return .data(dataValue)
-        }
-
-        if let arrayValue = value as? [Any] {
-            return .array(arrayValue.map(Value.from))
-        }
-
-        if let dictionaryValue = value as? [String: Any] {
-            var object: [String: Value] = [:]
+extension Value: Codable {
+    public init(from decoder: Decoder) throws {
+        // Try object first (keyed container)
+        if let container = try? decoder.container(keyedBy: DynamicCodingKey.self),
+           !container.allKeys.isEmpty {
+            var values: [String: Value] = [:]
             var keyOrder: [String] = []
-            for (key, value) in dictionaryValue {
-                if !keyOrder.contains(key) {
-                    keyOrder.append(key)
-                }
-                object[key] = Value.from(value)
+            for key in container.allKeys {
+                values[key.stringValue] = try container.decode(Value.self, forKey: key)
+                keyOrder.append(key.stringValue)
             }
-            return .object(object, keyOrder: keyOrder)
+            self = .object(values, keyOrder: keyOrder)
+            return
         }
 
-        return .null
+        // Try array (unkeyed container)
+        if var container = try? decoder.unkeyedContainer() {
+            var array: [Value] = []
+            while !container.isAtEnd {
+                array.append(try container.decode(Value.self))
+            }
+            self = .array(array)
+            return
+        }
+
+        // Primitives (single value container)
+        let container = try decoder.singleValueContainer()
+
+        if container.decodeNil() {
+            self = .null
+            return
+        }
+
+        // Int64 before Bool (0/1 can decode as Bool)
+        if let v = try? container.decode(Int64.self) { self = .int(v); return }
+        if let v = try? container.decode(Bool.self) { self = .bool(v); return }
+        if let v = try? container.decode(Double.self) { self = .double(v); return }
+        if let v = try? container.decode(String.self) { self = .string(v); return }
+
+        throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unable to decode Value")
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        switch self {
+        case .null:
+            var container = encoder.singleValueContainer()
+            try container.encodeNil()
+        case let .bool(v):
+            var container = encoder.singleValueContainer()
+            try container.encode(v)
+        case let .int(v):
+            var container = encoder.singleValueContainer()
+            try container.encode(v)
+        case let .double(v):
+            var container = encoder.singleValueContainer()
+            try container.encode(v)
+        case let .string(v):
+            var container = encoder.singleValueContainer()
+            try container.encode(v)
+        case let .date(v):
+            var container = encoder.singleValueContainer()
+            try container.encode(v)
+        case let .url(v):
+            var container = encoder.singleValueContainer()
+            try container.encode(v)
+        case let .data(v):
+            var container = encoder.singleValueContainer()
+            try container.encode(v)
+        case let .array(v):
+            var container = encoder.unkeyedContainer()
+            for item in v {
+                try container.encode(item)
+            }
+        case let .object(values, keyOrder):
+            var container = encoder.container(keyedBy: DynamicCodingKey.self)
+            for key in keyOrder {
+                if let value = values[key] {
+                    try container.encode(value, forKey: DynamicCodingKey(stringValue: key))
+                }
+            }
+        }
+    }
+}
+
+private struct DynamicCodingKey: CodingKey {
+    var stringValue: String
+    var intValue: Int? { nil }
+
+    init(stringValue: String) {
+        self.stringValue = stringValue
+    }
+
+    init?(intValue: Int) {
+        self.stringValue = String(intValue)
     }
 }
 
