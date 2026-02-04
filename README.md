@@ -93,6 +93,54 @@ Then add the dependency to your target:
 .target(name: "YourTarget", dependencies: ["ToonFormat"])
 ```
 
+## Command Line Interface
+
+Install and run the CLI using [Mint](https://github.com/yonaskolb/Mint):
+
+```bash
+mint install toon-format/toon-swift
+```
+
+### Encode (JSON → TOON)
+
+```bash
+# From stdin
+echo '{"name":"Ada","age":30}' | toon encode
+
+# From file
+toon encode data.json
+
+# With options
+toon encode --delimiter tab --key-folding data.json
+```
+
+### Decode (TOON → JSON)
+
+```bash
+# From stdin
+echo 'name: Ada' | toon decode
+
+# From file with pretty print
+toon decode --pretty data.toon
+```
+
+### CLI Options
+
+**Encode:**
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--delimiter` | `-d` | Array delimiter: `comma`, `tab`, `pipe` |
+| `--indent` | `-i` | Spaces per indentation level (default: 2) |
+| `--key-folding` | `-k` | Enable key folding |
+| `--flatten-depth` | | Maximum depth for key folding |
+
+**Decode:**
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--expand-paths` | | Path expansion: `automatic`, `disabled`, `safe` |
+| `--pretty` | `-p` | Pretty-print JSON output |
+| `--compact` | | Compact JSON output |
+
 ## Usage
 
 ### Quick Start
